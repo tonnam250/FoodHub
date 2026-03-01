@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    ports:
+      - "3001:3001"
+
+  menu-service:
+    build:
+      context: .
+      dockerfile: menu-service/Dockerfile
+    ports:
+      - "3002:3002"
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    ports:
+      - "3003:3003"
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    ports:
+      - "3004:3004"
