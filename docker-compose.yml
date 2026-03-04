@@ -8,12 +8,33 @@ services:
     ports:
       - "3001:3001"
 
+  menu-db:
+    image: postgres:15
+    container_name: menu-db
+    environment:
+      POSTGRES_DB: menudb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   menu-service:
     build:
       context: .
       dockerfile: menu-service/Dockerfile
     ports:
       - "3002:3002"
+    environment:
+      DATABASE_URL: postgres://postgres:password@menu-db:5432/menudb?sslmode=disable
+    depends_on:
+      menu-db:
+        condition: service_healthy
+    
 
   order-service:
     build:
