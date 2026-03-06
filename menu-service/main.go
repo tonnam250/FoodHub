@@ -50,7 +50,7 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	log.Println("Connected to PostgreSQL")
+	log.Println("Menu service running on port 3002")
 }
 
 // GET /menu
