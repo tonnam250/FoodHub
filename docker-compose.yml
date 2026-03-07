@@ -1,12 +1,20 @@
-version: "3.9"
-
 services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: foodhub
+    ports:
+      - "5432:5432"
+
   user-service:
     build:
       context: .
       dockerfile: user-service/Dockerfile
     ports:
       - "3001:3001"
+    depends_on:
+      - postgres
 
   menu-service:
     build:
@@ -14,6 +22,8 @@ services:
       dockerfile: menu-service/Dockerfile
     ports:
       - "3002:3002"
+    depends_on:
+      - postgres
 
   order-service:
     build:
@@ -21,6 +31,10 @@ services:
       dockerfile: order-service/Dockerfile
     ports:
       - "3003:3003"
+    depends_on:
+      - postgres
+      - user-service
+      - menu-service
 
   payment-service:
     build:
@@ -28,3 +42,28 @@ services:
       dockerfile: payment-service/Dockerfile
     ports:
       - "3004:3004"
+    depends_on:
+      - postgres
+      - order-service
+
+  cart-service:
+    build:
+      context: .
+      dockerfile: cart-service/Dockerfile
+    ports:
+      - "3005:3005"
+    depends_on:
+      - user-service
+      - menu-service
+
+  # api-gateway:
+  #   build:
+  #     context: .
+  #     dockerfile: api-gateway/Dockerfile
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - user-service
+  #     - menu-service
+  #     - order-service
+  #     - payment-service
