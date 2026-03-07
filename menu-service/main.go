@@ -1,12 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
-	"sync"
 
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 type Menu struct {
@@ -15,108 +18,152 @@ type Menu struct {
 	Price float64 `json:"price"`
 }
 
-var (
-	menuStore = make(map[int]Menu)
-	nextID    = 1
-	mu        sync.Mutex
-)
+var db *sql.DB
 
-func seedData() {
-	menuStore[1] = Menu{ID: 1, Name: "Burger", Price: 99}
-	menuStore[2] = Menu{ID: 2, Name: "Pizza", Price: 149}
-	nextID = 3
+func initDB() {
+	var err error
+
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		connStr = "postgres://postgres:password@menu-db:5432/menudb?sslmode=disable"
+	}
+
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal("Database not reachable")
+	}
+
+	createTable := `
+	CREATE TABLE IF NOT EXISTS menus (
+		id SERIAL PRIMARY KEY,
+		name TEXT NOT NULL,
+		price NUMERIC NOT NULL
+	);`
+
+	_, err = db.Exec(createTable)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("Menu service running on port 3002")
 }
 
 // GET /menu
 func getMenus(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
+	rows, err := db.Query("SELECT id, name, price FROM menus")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
 
-	var list []Menu
-	for _, m := range menuStore {
-		list = append(list, m)
+	var menus []Menu
+	for rows.Next() {
+		var m Menu
+		rows.Scan(&m.ID, &m.Name, &m.Price)
+		menus = append(menus, m)
 	}
 
-	json.NewEncoder(w).Encode(list)
+	json.NewEncoder(w).Encode(menus)
 }
 
 // GET /menu/{id}
 func getMenu(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
-
 	id, _ := strconv.Atoi(mux.Vars(r)["id"])
-	menu, exists := menuStore[id]
 
-	if !exists {
-		http.Error(w, `{"error":"menu not found"}`, http.StatusNotFound)
+	var m Menu
+	err := db.QueryRow("SELECT id, name, price FROM menus WHERE id=$1", id).
+		Scan(&m.ID, &m.Name, &m.Price)
+
+	if err == sql.ErrNoRows {
+		http.Error(w, `{"error":"menu not found"}`, 404)
 		return
 	}
 
-	json.NewEncoder(w).Encode(menu)
+	json.NewEncoder(w).Encode(m)
 }
 
 // POST /menu
 func createMenu(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
+	var m Menu
+	json.NewDecoder(r.Body).Decode(&m)
 
-	var menu Menu
-	json.NewDecoder(r.Body).Decode(&menu)
-
-	if menu.Name == "" || menu.Price <= 0 {
-		http.Error(w, `{"error":"invalid input"}`, http.StatusBadRequest)
+	if m.Name == "" || m.Price <= 0 {
+		http.Error(w, `{"error":"invalid input"}`, 400)
 		return
 	}
 
-	menu.ID = nextID
-	nextID++
-	menuStore[menu.ID] = menu
+	err := db.QueryRow(
+		"INSERT INTO menus (name, price) VALUES ($1, $2) RETURNING id",
+		m.Name, m.Price,
+	).Scan(&m.ID)
+
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(menu)
+	json.NewEncoder(w).Encode(m)
 }
 
 // PUT /menu/{id}
 func updateMenu(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
-
 	id, _ := strconv.Atoi(mux.Vars(r)["id"])
 
-	_, exists := menuStore[id]
-	if !exists {
-		http.Error(w, `{"error":"menu not found"}`, http.StatusNotFound)
+	var m Menu
+	json.NewDecoder(r.Body).Decode(&m)
+
+	if m.Name == "" || m.Price <= 0 {
+		http.Error(w, `{"error":"invalid input"}`, 400)
 		return
 	}
 
-	var updated Menu
-	json.NewDecoder(r.Body).Decode(&updated)
+	result, err := db.Exec(
+		"UPDATE menus SET name=$1, price=$2 WHERE id=$3",
+		m.Name, m.Price, id,
+	)
 
-	if updated.Name == "" || updated.Price <= 0 {
-		http.Error(w, `{"error":"invalid input"}`, http.StatusBadRequest)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	updated.ID = id
-	menuStore[id] = updated
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
-	json.NewEncoder(w).Encode(updated)
+	if rowsAffected == 0 {
+		http.Error(w, `{"error":"menu not found"}`, 404)
+		return
+	}
+
+	m.ID = id
+	json.NewEncoder(w).Encode(m)
 }
 
 // DELETE /menu/{id}
 func deleteMenu(w http.ResponseWriter, r *http.Request) {
-	mu.Lock()
-	defer mu.Unlock()
-
 	id, _ := strconv.Atoi(mux.Vars(r)["id"])
 
-	if _, exists := menuStore[id]; !exists {
-		http.Error(w, `{"error":"menu not found"}`, http.StatusNotFound)
+	result, err := db.Exec("DELETE FROM menus WHERE id=$1", id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	delete(menuStore, id)
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		http.Error(w, `{"error":"menu not found"}`, 404)
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "menu deleted",
@@ -124,7 +171,7 @@ func deleteMenu(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	seedData()
+	initDB()
 
 	r := mux.NewRouter()
 
@@ -134,5 +181,5 @@ func main() {
 	r.HandleFunc("/menu/{id}", updateMenu).Methods("PUT")
 	r.HandleFunc("/menu/{id}", deleteMenu).Methods("DELETE")
 
-	http.ListenAndServe(":3002", r)
+	log.Fatal(http.ListenAndServe(":3002", r))
 }
