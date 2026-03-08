@@ -240,5 +240,5 @@ func main() {
 	r.HandleFunc("/menu/{id}", deleteMenu).Methods("DELETE")
 
 	log.Println("Menu service running on port 3002")
-	log.Fatal(http.ListenAndServe(":3002", enableCORS(r)))
+	log.Fatal(http.ListenAndServe(":3002", r))
 }

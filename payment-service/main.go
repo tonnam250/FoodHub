@@ -109,7 +109,7 @@ func main() {
 	r.HandleFunc("/payments", createPayment).Methods("POST")
 
 	log.Println("Payment service running on :3004")
-	log.Fatal(http.ListenAndServe(":3004", enableCORS(r)))
+	log.Fatal(http.ListenAndServe(":3004", r))
 }
 
 func initRabbitMQ() {

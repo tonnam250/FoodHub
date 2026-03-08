@@ -59,7 +59,7 @@ func main() {
 	r.HandleFunc("/users/{id}", updateUser).Methods("PUT")
 
 	log.Println("User service running on :3001")
-	log.Fatal(http.ListenAndServe(":3001", enableCORS(r)))
+	log.Fatal(http.ListenAndServe(":3001", r))
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
