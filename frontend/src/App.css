@@ -291,17 +291,22 @@ button:disabled {
   font-size: 0.78rem;
 }
 
+.status-created {
+  background: rgba(245, 158, 11, 0.22);
+  color: #fcd34d;
+}
+
 .status-preparing {
   background: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
 }
 
-.status-ready-for-pickup {
+.status-ready {
   background: rgba(22, 163, 74, 0.2);
   color: #86efac;
 }
 
-.status-completed {
+.status-picked_up {
   background: rgba(148, 163, 184, 0.2);
   color: #cbd5e1;
 }
@@ -312,7 +317,8 @@ button:disabled {
   gap: 8px;
 }
 
-input {
+input,
+select {
   border: 1px solid #263248;
   border-radius: 10px;
   padding: 10px;
@@ -372,6 +378,46 @@ input::placeholder {
   color: #fcd34d;
 }
 
+.toast-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  gap: 10px;
+  z-index: 1000;
+  width: min(360px, 90vw);
+}
+
+.toast {
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 12px;
+  background: #0f172a;
+  box-shadow: var(--shadow);
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.toast p {
+  margin: 4px 0 0;
+  color: #cbd5e1;
+}
+
+.toast-success {
+  border-left-color: #22c55e;
+}
+
+.toast-error {
+  border-left-color: #ef4444;
+}
+
+.toast-info {
+  border-left-color: #38bdf8;
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -400,7 +446,18 @@ input::placeholder {
     width: 100%;
     justify-content: space-between;
   }
+
+  .auth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toast-stack {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
 }
+
 .brand-badge {
   padding: 0;
   overflow: hidden;
@@ -412,10 +469,6 @@ input::placeholder {
   height: 100%;
   object-fit: cover;
   display: block;
-}
-.status-created {
-  background: rgba(245, 158, 11, 0.22);
-  color: #fcd34d;
 }
 
 .auth-grid {
@@ -436,30 +489,3 @@ input::placeholder {
 .auth-form h3 {
   margin: 0 0 4px;
 }
-
-@media (max-width: 760px) {
-  .auth-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-select {
-  border: 1px solid #263248;
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 0.95rem;
-  font-family: inherit;
-  background: #0b1220;
-  color: #f8fafc;
-}
-
-.status-ready {
-  background: rgba(22, 163, 74, 0.2);
-  color: #86efac;
-}
-
-.status-picked_up {
-  background: rgba(148, 163, 184, 0.2);
-  color: #cbd5e1;
-}
-

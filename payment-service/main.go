@@ -12,8 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"FoodHub/common/resilience"
 	"github.com/gorilla/mux"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type Payment struct {
@@ -33,7 +36,23 @@ type CreatePaymentRequest struct {
 	SimulateFail bool    `json:"simulateFail"`
 }
 
+type OrderCreatedEvent struct {
+	OrderID int     `json:"orderId"`
+	UserID  int     `json:"userId"`
+	MenuID  int     `json:"menuId"`
+	Qty     int     `json:"qty"`
+	Amount  float64 `json:"amount"`
+	Method  string  `json:"method"`
+}
+
 var db *sql.DB
+var orderCB = resilience.NewCircuitBreaker(3, 10*time.Second)
+var downstreamHTTP = &http.Client{Timeout: 3 * time.Second}
+
+var rabbitConn *amqp.Connection
+var rabbitCh *amqp.Channel
+
+const orderCreatedQueue = "order.created"
 
 func main() {
 	connStr := os.Getenv("DATABASE_URL")
@@ -79,13 +98,99 @@ func main() {
 		log.Fatal(err)
 	}
 
+	initRabbitMQ()
+	startOrderCreatedConsumer()
+
 	r := mux.NewRouter()
+	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	r.HandleFunc("/payments", getPayments).Methods("GET")
 	r.HandleFunc("/payments/{id}", getPaymentByID).Methods("GET")
 	r.HandleFunc("/payments", createPayment).Methods("POST")
 
 	log.Println("Payment service running on :3004")
 	log.Fatal(http.ListenAndServe(":3004", enableCORS(r)))
+}
+
+func initRabbitMQ() {
+	rabbitURL := os.Getenv("RABBITMQ_URL")
+	if rabbitURL == "" {
+		rabbitURL = "amqp://guest:guest@rabbitmq:5672/"
+	}
+
+	var err error
+	for i := 0; i < 20; i++ {
+		rabbitConn, err = amqp.Dial(rabbitURL)
+		if err == nil {
+			break
+		}
+		log.Printf("rabbitmq not ready, retrying: %v", err)
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		log.Printf("rabbitmq disabled: %v", err)
+		return
+	}
+
+	rabbitCh, err = rabbitConn.Channel()
+	if err != nil {
+		log.Printf("rabbitmq channel error: %v", err)
+		return
+	}
+
+	_, err = rabbitCh.QueueDeclare(orderCreatedQueue, true, false, false, false, nil)
+	if err != nil {
+		log.Printf("rabbitmq queue declare error: %v", err)
+	}
+}
+
+func startOrderCreatedConsumer() {
+	if rabbitCh == nil {
+		return
+	}
+	msgs, err := rabbitCh.Consume(orderCreatedQueue, "payment-service", false, false, false, false, nil)
+	if err != nil {
+		log.Printf("rabbit consume error: %v", err)
+		return
+	}
+
+	go func() {
+		for msg := range msgs {
+			var event OrderCreatedEvent
+			if err := json.Unmarshal(msg.Body, &event); err != nil {
+				_ = msg.Nack(false, false)
+				continue
+			}
+
+			method := event.Method
+			if method == "" {
+				method = "CASH"
+			}
+			if _, err := createPaymentRecord(CreatePaymentRequest{
+				OrderID: event.OrderID,
+				Amount:  event.Amount,
+				Method:  method,
+			}); err != nil {
+				log.Printf("async payment create failed for order %d: %v", event.OrderID, err)
+				_ = msg.Ack(false)
+				continue
+			}
+			_ = msg.Ack(false)
+		}
+	}()
+}
+
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	if err := db.Ping(); err != nil {
+		http.Error(w, "db not ready", http.StatusServiceUnavailable)
+		return
+	}
+	status := "ok"
+	if rabbitCh == nil {
+		status = "degraded"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": status, "service": "payment-service"})
 }
 
 func enableCORS(next http.Handler) http.Handler {
@@ -124,7 +229,7 @@ func getPayments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(payments)
+	_ = json.NewEncoder(w).Encode(payments)
 }
 
 func getPaymentByID(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +259,7 @@ func getPaymentByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(p)
+	_ = json.NewEncoder(w).Encode(p)
 }
 
 func createPayment(w http.ResponseWriter, r *http.Request) {
@@ -164,14 +269,24 @@ func createPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Amount <= 0 {
-		http.Error(w, "amount must be greater than 0", http.StatusBadRequest)
+	payment, err := createPaymentRecord(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(payment)
+}
+
+func createPaymentRecord(req CreatePaymentRequest) (*Payment, error) {
+	if req.Amount <= 0 {
+		return nil, errors.New("amount must be greater than 0")
+	}
+
 	if !checkOrderExists(req.OrderID) {
-		http.Error(w, "Order not found", http.StatusBadRequest)
-		return
+		return nil, errors.New("order not found")
 	}
 
 	method := strings.ToUpper(strings.TrimSpace(req.Method))
@@ -179,8 +294,7 @@ func createPayment(w http.ResponseWriter, r *http.Request) {
 		method = "CASH"
 	}
 	if method != "CASH" && method != "QR" && method != "CARD" {
-		http.Error(w, "invalid payment method", http.StatusBadRequest)
-		return
+		return nil, errors.New("invalid payment method")
 	}
 
 	status := "PAID"
@@ -202,14 +316,25 @@ func createPayment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == "23505" {
-			http.Error(w, "Order already has payment record", http.StatusBadRequest)
-			return
+			// Idempotency for async flow.
+			var existing Payment
+			var existingPaidAt sql.NullTime
+			qErr := db.QueryRow(
+				"SELECT id, order_id, amount, method, status, reference, paid_at FROM payments WHERE order_id=$1",
+				req.OrderID,
+			).Scan(&existing.ID, &existing.OrderID, &existing.Amount, &existing.Method, &existing.Status, &existing.Reference, &existingPaidAt)
+			if qErr == nil {
+				if existingPaidAt.Valid {
+					existing.PaidAt = existingPaidAt.Time.Format(time.RFC3339)
+				}
+				return &existing, nil
+			}
+			return nil, errors.New("order already has payment record")
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 
-	payment := Payment{
+	payment := &Payment{
 		ID:        paymentID,
 		OrderID:   req.OrderID,
 		Amount:    req.Amount,
@@ -221,17 +346,23 @@ func createPayment(w http.ResponseWriter, r *http.Request) {
 		payment.PaidAt = paidAt.Time.Format(time.RFC3339)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(payment)
+	return payment, nil
 }
 
 func checkOrderExists(orderID int) bool {
-	resp, err := http.Get(fmt.Sprintf("http://order-service:3003/orders/%d", orderID))
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	return resp.StatusCode == http.StatusOK
+	url := fmt.Sprintf("http://order-service:3003/orders/%d", orderID)
+	ok := false
+	err := orderCB.Execute(func() error {
+		resp, err := downstreamHTTP.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			ok = true
+			return nil
+		}
+		return errors.New("order not found")
+	})
+	return err == nil && ok
 }

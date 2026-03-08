@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type User struct {
@@ -50,6 +51,8 @@ func main() {
 	}
 
 	r := mux.NewRouter()
+	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	r.HandleFunc("/users", getUsers).Methods("GET")
 	r.HandleFunc("/users/{id}", getUserByID).Methods("GET")
 	r.HandleFunc("/users", createUser).Methods("POST")
@@ -59,6 +62,14 @@ func main() {
 	log.Fatal(http.ListenAndServe(":3001", enableCORS(r)))
 }
 
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	if err := db.Ping(); err != nil {
+		http.Error(w, "db not ready", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

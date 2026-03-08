@@ -14,6 +14,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -86,6 +87,8 @@ func main() {
 	}
 
 	r := mux.NewRouter()
+	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	r.HandleFunc("/auth/register", registerHandler).Methods("POST")
 	r.HandleFunc("/auth/login", loginHandler).Methods("POST")
 	r.HandleFunc("/auth/profile", updateProfileHandler).Methods("PUT")
@@ -96,6 +99,14 @@ func main() {
 	log.Fatal(http.ListenAndServe(":3006", enableCORS(r)))
 }
 
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	if err := db.Ping(); err != nil {
+		http.Error(w, "db not ready", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

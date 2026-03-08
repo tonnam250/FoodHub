@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Menu struct {
@@ -203,6 +204,14 @@ func deleteMenu(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "menu deleted"})
 }
 
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	if err := db.Ping(); err != nil {
+		http.Error(w, "db not ready", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -222,6 +231,8 @@ func main() {
 	initDB()
 
 	r := mux.NewRouter()
+	r.HandleFunc("/health", healthHandler).Methods("GET")
+	r.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	r.HandleFunc("/menu", getMenus).Methods("GET")
 	r.HandleFunc("/menu/{id}", getMenu).Methods("GET")
 	r.HandleFunc("/menu", createMenu).Methods("POST")

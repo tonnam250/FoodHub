@@ -5,6 +5,7 @@ import CartPage from "./pages/CartPage"
 import OrderPage from "./pages/OrderPage"
 import AdminMenuPage from "./pages/AdminMenuPage"
 import AccountPage from "./pages/AccountPage"
+import ToastContainer from "./components/ToastContainer"
 import { createMenuItem, deleteMenuItem, getMenus, updateMenuItem } from "./api/menuApi"
 import "./App.css"
 
@@ -63,6 +64,19 @@ function App() {
   const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
   const [token, setToken] = useState(localStorage.getItem("foodhub_token") || "")
   const [currentUser, setCurrentUser] = useState(null)
+  const [toasts, setToasts] = useState([])
+
+  const showToast = (type, title, message = "") => {
+    const id = Date.now() + Math.random()
+    setToasts((prev) => [...prev, { id, type, title, message }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 3500)
+  }
+
+  const closeToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
 
   const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart])
 
@@ -90,6 +104,7 @@ function App() {
       setMenus(Array.isArray(data) ? data : [])
     } catch (err) {
       setError(err.message || "Failed to load menu")
+      showToast("error", "Menu Load Failed", err.message || "Failed to load menu")
     } finally {
       setLoading(false)
     }
@@ -212,6 +227,7 @@ function App() {
       setAuthMessage(err.message || "Session expired")
       setToken("")
       localStorage.removeItem("foodhub_token")
+      showToast("error", "Session Expired", err.message || "Please login again")
     })
   }, [token])
 
@@ -219,6 +235,7 @@ function App() {
     if (!currentUser) {
       setAuthMessage("Please login first.")
       setPage("account")
+      showToast("info", "Login Required", "Please login before adding to cart")
       return
     }
 
@@ -231,8 +248,10 @@ function App() {
       })
       await loadUserCart(currentUser.id)
       setCartMessage(`Added ${menu.name} to your cart.`)
+      showToast("success", "Added To Cart", menu.name)
     } catch (err) {
       setCartMessage(err.message || "Failed to add to cart")
+      showToast("error", "Add To Cart Failed", err.message || "Request failed")
     }
   }
 
@@ -314,26 +333,31 @@ function App() {
         await loadAdminOrders()
       }
       setCartMessage(`Checkout successful with ${method} payment.`)
+      showToast("success", "Checkout Success", `Payment via ${method}`)
       setPage("orders")
     } catch (err) {
       setCartMessage(err.message || "Checkout failed")
+      showToast("error", "Checkout Failed", err.message || "Request failed")
     }
   }
 
   const handleCreateMenu = async (payload) => {
     const created = await createMenuItem(payload)
     setMenus((prev) => [...prev, created])
+    showToast("success", "Menu Created", created.name)
   }
 
   const handleUpdateMenu = async (id, payload) => {
     const updated = await updateMenuItem(id, payload)
     setMenus((prev) => prev.map((menu) => (menu.id === id ? updated : menu)))
+    showToast("success", "Menu Updated", updated.name)
   }
 
   const handleDeleteMenu = async (id) => {
     await deleteMenuItem(id)
     setMenus((prev) => prev.filter((menu) => menu.id !== id))
     setCart((prev) => prev.filter((item) => item.menuId !== id))
+    showToast("success", "Menu Deleted", `Menu #${id}`)
   }
 
   const handleAdvanceOrderStatus = async (orderId, status) => {
@@ -347,6 +371,7 @@ function App() {
       await loadUserOrders(currentUser.id)
     }
     await loadAdminOrders()
+    showToast("success", "Order Updated", `Order #${orderId} -> ${status}`)
   }
 
   const handleRegister = async ({ name, email, password }) => {
@@ -369,8 +394,10 @@ function App() {
       }
 
       setAuthMessage("Register success. Now login.")
+      showToast("success", "Register Success", "Now login with your account")
     } catch (err) {
       setAuthMessage(err.message || "Register failed")
+      showToast("error", "Register Failed", err.message || "Request failed")
     }
   }
 
@@ -386,15 +413,18 @@ function App() {
       localStorage.setItem("foodhub_token", data.token)
       setToken(data.token)
       setAuthMessage("Login success")
+      showToast("success", "Login Success", `Welcome ${email}`)
       setPage("menu")
     } catch (err) {
       setAuthMessage(err.message || "Login failed")
+      showToast("error", "Login Failed", err.message || "Request failed")
     }
   }
 
   const handleUpdateProfile = async ({ name, email, currentPassword, newPassword }) => {
     if (!currentUser || !token) {
       setAuthMessage("Please login first.")
+      showToast("info", "Login Required", "Please login first")
       return
     }
 
@@ -423,8 +453,10 @@ function App() {
       }
 
       setAuthMessage("Profile updated.")
+      showToast("success", "Profile Updated", updatedUser.email)
     } catch (err) {
       setAuthMessage(err.message || "Failed to update profile")
+      showToast("error", "Profile Update Failed", err.message || "Request failed")
     }
   }
 
@@ -446,6 +478,7 @@ function App() {
     setCart([])
     setOrders([])
     setAuthMessage("Logged out")
+    showToast("info", "Logged Out", "You have been logged out")
     setPage("account")
   }
 
@@ -453,6 +486,8 @@ function App() {
     <div className="app">
       <div className="bg-orb bg-orb-1" />
       <div className="bg-orb bg-orb-2" />
+
+      <ToastContainer toasts={toasts} onClose={closeToast} />
 
       <Navbar
         activePage={page}
