@@ -1,0 +1,61 @@
+{
+  "id": null,
+  "uid": "foodhub-overview",
+  "title": "FoodHub Service Overview",
+  "tags": ["foodhub", "microservices"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Service Up (1=up, 0=down)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "up{job=~\"auth-service|user-service|menu-service|cart-service|order-service|payment-service\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Go Routines by Service",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "go_goroutines{job=~\"auth-service|user-service|menu-service|cart-service|order-service|payment-service\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Memory RSS by Service",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=~\"auth-service|user-service|menu-service|cart-service|order-service|payment-service\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

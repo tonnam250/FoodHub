@@ -1,11 +1,43 @@
+﻿services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
 
-services:
+  user-db:
+    image: postgres:15
+    container_name: user-db
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5431:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   user-service:
     build:
       context: .
       dockerfile: user-service/Dockerfile
     ports:
       - "3001:3001"
+    environment:
+      DATABASE_URL: postgres://postgres:password@user-db:5432/userdb?sslmode=disable
+    depends_on:
+      user-db:
+        condition: service_healthy
 
   menu-db:
     image: postgres:15
@@ -60,14 +92,49 @@ services:
     depends_on:
       cart-db:
         condition: service_healthy
-    
 
-  order-service:
+  auth-db:
+    image: postgres:15
+    container_name: auth-db
+    environment:
+      POSTGRES_DB: authdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
     build:
       context: .
-      dockerfile: order-service/Dockerfile
+      dockerfile: auth-service/Dockerfile
     ports:
-      - "3003:3003"
+      - "3006:3006"
+    environment:
+      DATABASE_URL: postgres://postgres:password@auth-db:5432/authdb?sslmode=disable
+      JWT_SECRET: super-secret-jwt-key
+    depends_on:
+      auth-db:
+        condition: service_healthy
+
+  payment-db:
+    image: postgres:15
+    container_name: payment-db
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   payment-service:
     build:
@@ -75,3 +142,82 @@ services:
       dockerfile: payment-service/Dockerfile
     ports:
       - "3004:3004"
+    environment:
+      DATABASE_URL: postgres://postgres:password@payment-db:5432/paymentdb?sslmode=disable
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  order-db:
+    image: postgres:15
+    container_name: order-db
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build:
+      context: .
+      dockerfile: order-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      DATABASE_URL: postgres://postgres:password@order-db:5432/orderdb?sslmode=disable
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      order-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      auth-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      menu-service:
+        condition: service_started
+      cart-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+
+
