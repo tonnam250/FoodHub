@@ -96,7 +96,7 @@ func main() {
 	r.HandleFunc("/auth/validate", validateHandler).Methods("GET")
 
 	log.Println("Auth service running on :3006")
-	log.Fatal(http.ListenAndServe(":3006", r))
+	log.Fatal(http.ListenAndServe(":3006", enableCORS(r)))
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {

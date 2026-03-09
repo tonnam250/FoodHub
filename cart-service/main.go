@@ -60,7 +60,7 @@ func main() {
 	r.HandleFunc("/cart/{id}", deleteCartItem).Methods("DELETE")
 
 	log.Println("Cart service running on port 3005")
-	log.Fatal(http.ListenAndServe(":3005", r))
+	log.Fatal(http.ListenAndServe(":3005", enableCORS(r)))
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {

@@ -89,7 +89,7 @@ func main() {
 	r.HandleFunc("/orders/{id}/status", updateOrderStatus).Methods("PUT")
 
 	log.Println("Order service running on :3003")
-	log.Fatal(http.ListenAndServe(":3003", r))
+	log.Fatal(http.ListenAndServe(":3003", enableCORS(r)))
 }
 
 func initRabbitMQ() {
