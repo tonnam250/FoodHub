@@ -1,0 +1,23 @@
+﻿global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: auth-service
+    static_configs:
+      - targets: ["auth-service:3006"]
+  - job_name: user-service
+    static_configs:
+      - targets: ["user-service:3001"]
+  - job_name: menu-service
+    static_configs:
+      - targets: ["menu-service:3002"]
+  - job_name: cart-service
+    static_configs:
+      - targets: ["cart-service:3005"]
+  - job_name: order-service
+    static_configs:
+      - targets: ["order-service:3003"]
+  - job_name: payment-service
+    static_configs:
+      - targets: ["payment-service:3004"]
