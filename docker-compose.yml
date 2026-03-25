@@ -2,29 +2,25 @@ version: "3.9"
 
 services:
   user-service:
-    build:
-      context: .
-      dockerfile: user-service/Dockerfile
+    build: ./user-service
     ports:
       - "3001:3001"
 
   menu-service:
-    build:
-      context: .
-      dockerfile: menu-service/Dockerfile
+    build: ./menu-service
     ports:
       - "3002:3002"
 
   order-service:
-    build:
-      context: .
-      dockerfile: order-service/Dockerfile
+    build: ./order-service
     ports:
       - "3003:3003"
 
-  payment-service:
-    build:
-      context: .
-      dockerfile: payment-service/Dockerfile
+  api-gateway:
+    build: ./api-gateway
     ports:
-      - "3004:3004"
+      - "8080:8080"
+    depends_on:
+      - user-service
+      - menu-service
+      - order-service
